@@ -1,24 +1,43 @@
-# claude-skills
+# telegram-notify
 
-我自己的 Claude Code skill 收藏，也是**開新專案用的範本 repo**。
+抹茶商品新上架監控：定時抓取丸久小山園官網商品頁，比對是否有新商品，有的話透過 Telegram Bot 發通知（含商品名稱、價格、配送限制說明）。
 
-目前內容：[mattpocock/skills](https://github.com/mattpocock/skills)（MIT，commit `49dd158`）的 27 個 skill，放在 `.claude/skills/`。授權檔見 `.claude/skills/LICENSE-mattpocock-skills`。
+監控網址：https://www.marukyu-koyamaen.net/category/select/cid/312
 
-## 開新專案（每個新專案做一次）
+## 檔案
 
-1. 在 GitHub 網頁（用 Safari 開電腦版也可以）打開這個 repo，按綠色的 **Use this template → Create a new repository**，取新專案的名字。
-2. 在 Claude Code 雲端選剛建好的 repo，開新 session。
-3. 第一件事執行 `/setup-matt-pocock-skills`：選 issue 放哪（GitHub Issues）、triage 標籤用預設值。它會產生 `CLAUDE.md` 和 `docs/agents/`。
-4. 之後照流程：`/grill-with-docs` → `/to-spec` → `/to-tickets` → `/implement-spec`。
+- `matcha_monitor.py` — 主程式。抓取商品頁、解析商品清單、比對狀態、發送 Telegram 通知。
+- `matcha_monitor_state.json` — 執行時產生的狀態檔（記錄目前已知的商品清單），不納入版本控制，執行一次會自動建立。
 
-> 新 repo 一建好就帶著 `.claude/skills/`，所以第一個 session 打 `/` 就看得到這些 skill。
+## 執行環境需求
 
-## 更新已經存在的專案
+這個專案目前跑在 Claude Code 雲端環境裡，需要：
 
-範本只在「建立新 repo 的那一刻」複製一次，之後不會自動同步。要更新某個舊專案時，在那個專案的 session 裡請 Claude：
+1. **環境變數**（Environment variables，不是 Network secrets）：
+   - `TELEGRAM_BOT_TOKEN` — Telegram Bot 的 API token
+   - `TELEGRAM_CHAT_ID` — 要發送通知的 chat id
+2. **網路存取允許清單**（Network access / Allowed domains）需要包含：
+   - `www.marukyu-koyamaen.net`
+   - `api.telegram.org`
+3. Python 套件：`pip install -r requirements.txt`（目前只需要 `requests`）
 
-> 把 `justingu1110/claude-skills` 的 `.claude/skills/` 同步到這個 repo，開 PR。
+## 手動執行
 
-## 新增或修改 skill
+```bash
+python3 matcha_monitor.py
+```
 
-先改這個 repo，再用上面的方式同步到各專案。
+第一次執行只會建立 baseline（`matcha_monitor_state.json`），不會發通知。之後每次執行，若解析到的商品清單比對 state file 有新增的商品，才會發送 Telegram 通知。
+
+## 目前的排程
+
+有一個雲端排程（cron trigger）設定為每小時執行一次 `python3 /home/user/matcha_monitor.py`，trigger id `trig_01A8ghLoKfR3zt6tSNtopsSc`。
+
+這個排程是綁定在特定 session 上執行的，不是跟著這個 repo走——在新 session 裡 clone 這個 repo 並不會自動恢復排程。如果要在新 session 接手，請先確認排程還在跑（用 `list_triggers` 或直接問 Claude「查一下排程狀態」），不需要重新設定；只有在排程被刪除或 session 失效時才需要重新建立。
+
+## 新 session 接手開發的步驟
+
+1. Attach 這個 repo
+2. 確認 Environment 的環境變數和網路允許清單符合上面「執行環境需求」
+3. 跑一次 `python3 matcha_monitor.py` 確認正常運作
+4. 繼續開發（例如加監控其他商品頁網址、調整通知格式）
