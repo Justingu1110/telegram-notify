@@ -559,3 +559,255 @@ def test_a_very_long_failure_reason_is_shortened_in_the_warning():
 
     assert "boom" in notifier.sent[0]
     assert len(notifier.sent[0]) < 500
+
+
+def detail_url(pid):
+    return f"{MARUKYU_LIST_URL}/pid/{pid}"
+
+
+def real_detail_page(pid):
+    return (FIXTURES / "detail" / f"{pid}.html").read_text(encoding="utf-8")
+
+
+def detail_page_saying(pid, stock_text):
+    return re.sub(
+        r'(库存:</span>\s*<span class="data-desc">).*?(</span>)',
+        lambda m: m.group(1) + stock_text + m.group(2),
+        real_detail_page(pid),
+        count=1,
+        flags=re.S,
+    )
+
+
+def full_site(list_page=None):
+    watch = load_watches()[0]
+    pages = {watch.url: list_page or real_list_page()}
+    for pid in SHOWN_ON_LIST_PAGE:
+        pages[detail_url(pid)] = real_detail_page(pid)
+    return FlakySite(pages)
+
+
+def test_the_baseline_records_each_products_stock_text_and_status():
+    watch = load_watches()[0]
+    store = MemoryStore()
+
+    run_check([watch], fetch=full_site(), notify=RecordingNotifier(), store=store)
+
+    products = store.state[watch.name]["products"]
+    assert products["8835"]["stock_text"] == "8有库存"
+    assert products["8794"]["stock_text"] == "10有库存"
+    assert products["8778"]["stock_text"] == "10有库存"
+    assert {p["stock_status"] for p in products.values()} == {"in_stock"}
+
+
+def test_the_baseline_produces_no_event_beyond_the_startup_summary():
+    watch = load_watches()[0]
+    notifier = RecordingNotifier()
+
+    run_check([watch], fetch=full_site(), notify=notifier, store=MemoryStore())
+
+    assert len(notifier.sent) == 1
+    assert "監控已啟動" in notifier.sent[0]
+
+
+def baseline_with_8835_out_of_stock():
+    watch = load_watches()[0]
+    site = full_site()
+    site.pages[detail_url("8835")] = detail_page_saying("8835", "无库存")
+    store = MemoryStore()
+    run_check([watch], fetch=site, notify=RecordingNotifier(), store=store)
+    return watch, site, store
+
+
+def test_a_product_that_stays_listed_but_goes_from_out_of_stock_to_in_stock_is_a_restock():
+    watch, site, store = baseline_with_8835_out_of_stock()
+    site.pages[detail_url("8835")] = real_detail_page("8835")
+    notifier = RecordingNotifier()
+
+    run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert len(notifier.sent) == 1
+    notification = notifier.sent[0]
+    assert "補貨通知" in notification
+    assert "新品上架" not in notification
+    assert "永寿 四十克 罐 （Matcha Eiju 40g can）" in notification
+    assert "¥9,140.00" in notification
+    assert detail_url("8835") in notification
+    assert "⚠️" in notification
+    assert "仅配送中国地区，不包含台湾香港澳门" in notification
+
+
+def baselined_site():
+    watch = load_watches()[0]
+    site = full_site()
+    store = MemoryStore()
+    run_check([watch], fetch=site, notify=RecordingNotifier(), store=store)
+    return watch, site, store
+
+
+def test_a_product_that_disappears_from_the_list_and_comes_back_in_stock_is_a_restock_not_a_new_product():
+    watch, site, store = baselined_site()
+    full_page = real_list_page()
+    site.pages[watch.url] = page_without_first_products(full_page)
+    notifier = RecordingNotifier()
+    run_check([watch], fetch=site, notify=notifier, store=store)
+    assert notifier.sent == []
+    site.pages[watch.url] = full_page
+
+    run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert len(notifier.sent) == 1
+    assert "補貨通知" in notifier.sent[0]
+    assert "新品上架" not in notifier.sent[0]
+    assert detail_url("8835") in notifier.sent[0]
+
+
+def test_the_same_restock_is_not_announced_twice():
+    watch, site, store = baseline_with_8835_out_of_stock()
+    site.pages[detail_url("8835")] = real_detail_page("8835")
+    run_check([watch], fetch=site, notify=RecordingNotifier(), store=store)
+    notifier = RecordingNotifier()
+
+    run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert notifier.sent == []
+
+
+def test_an_unfamiliar_stock_text_sends_nothing_keeps_the_known_status_and_is_recorded():
+    watch, site, store = baselined_site()
+    site.pages[detail_url("8835")] = detail_page_saying("8835", "特别说明")
+    notifier = RecordingNotifier()
+
+    run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert notifier.sent == []
+    record = store.state[watch.name]["products"]["8835"]
+    assert record["stock_text"] == "特别说明"
+    assert record["stock_status"] == "in_stock"
+
+
+def test_coming_back_to_in_stock_after_an_unfamiliar_text_is_not_a_restock_when_it_was_in_stock_before():
+    watch, site, store = baselined_site()
+    site.pages[detail_url("8835")] = detail_page_saying("8835", "特别说明")
+    run_check([watch], fetch=site, notify=RecordingNotifier(), store=store)
+    site.pages[detail_url("8835")] = real_detail_page("8835")
+    notifier = RecordingNotifier()
+
+    run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert notifier.sent == []
+
+
+def test_an_unfamiliar_text_between_out_of_stock_and_in_stock_still_ends_in_one_restock():
+    watch, site, store = baseline_with_8835_out_of_stock()
+    site.pages[detail_url("8835")] = detail_page_saying("8835", "特别说明")
+    notifier = RecordingNotifier()
+    run_check([watch], fetch=site, notify=notifier, store=store)
+    assert notifier.sent == []
+    site.pages[detail_url("8835")] = real_detail_page("8835")
+
+    run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert len(notifier.sent) == 1
+    assert "補貨通知" in notifier.sent[0]
+
+
+def test_one_unreadable_detail_page_only_affects_that_product_and_is_not_a_watch_failure():
+    watch = load_watches()[0]
+    site = full_site()
+    for pid in ("8835", "8794"):
+        site.pages[detail_url(pid)] = detail_page_saying(pid, "无库存")
+    store = MemoryStore()
+    run_check([watch], fetch=site, notify=RecordingNotifier(), store=store)
+    site.down.add(detail_url("8835"))
+    site.pages[detail_url("8794")] = real_detail_page("8794")
+    notifier = RecordingNotifier()
+
+    for _ in range(3):
+        run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert len(notifier.sent) == 1
+    assert detail_url("8794") in notifier.sent[0]
+    assert "監控異常" not in notifier.sent[0]
+    record = store.state[watch.name]["products"]["8835"]
+    assert record["stock_text"] == "无库存"
+    assert record["stock_status"] == "out_of_stock"
+
+    site.down.clear()
+    site.pages[detail_url("8835")] = real_detail_page("8835")
+    run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert len(notifier.sent) == 2
+    assert detail_url("8835") in notifier.sent[1]
+
+
+def test_a_failed_list_page_does_not_make_products_look_out_of_stock():
+    watch, site, store = baselined_site()
+    site.down.add(watch.url)
+    notifier = RecordingNotifier()
+    for _ in range(3):
+        run_check([watch], fetch=site, notify=notifier, store=store)
+    warnings_sent = list(notifier.sent)
+    site.down.clear()
+
+    run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert notifier.sent == warnings_sent
+
+
+def test_a_product_whose_stock_was_unknown_at_the_baseline_is_not_announced_when_it_turns_up_in_stock():
+    watch = load_watches()[0]
+    site = full_site()
+    site.pages[detail_url("8835")] = detail_page_saying("8835", "特别说明")
+    store = MemoryStore()
+    run_check([watch], fetch=site, notify=RecordingNotifier(), store=store)
+    site.pages[detail_url("8835")] = real_detail_page("8835")
+    notifier = RecordingNotifier()
+
+    run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert notifier.sent == []
+
+
+def test_a_new_product_is_announced_once_and_its_stock_is_recorded():
+    watch = load_watches()[0]
+    full_page = real_list_page()
+    site = full_site(page_without_first_products(full_page))
+    store = MemoryStore()
+    run_check([watch], fetch=site, notify=RecordingNotifier(), store=store)
+    site.pages[watch.url] = full_page
+    notifier = RecordingNotifier()
+
+    run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert len(notifier.sent) == 1
+    assert "新品上架通知" in notifier.sent[0]
+    record = store.state[watch.name]["products"]["8835"]
+    assert record["stock_text"] == "8有库存"
+    assert record["stock_status"] == "in_stock"
+
+
+def test_a_detail_page_without_a_stock_line_leaves_the_recorded_stock_untouched():
+    watch, site, store = baseline_with_8835_out_of_stock()
+    site.pages[detail_url("8835")] = real_detail_page("8835").replace("库存:", "在庫:")
+    notifier = RecordingNotifier()
+
+    run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert notifier.sent == []
+    record = store.state[watch.name]["products"]["8835"]
+    assert record["stock_text"] == "无库存"
+    assert record["stock_status"] == "out_of_stock"
+
+
+def test_a_restock_notification_that_could_not_be_sent_is_sent_on_the_next_run():
+    watch, site, store = baseline_with_8835_out_of_stock()
+    site.pages[detail_url("8835")] = real_detail_page("8835")
+    with pytest.raises(RuntimeError):
+        run_check([watch], fetch=site, notify=AlwaysFails(), store=store)
+    notifier = RecordingNotifier()
+
+    run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert len(notifier.sent) == 1
+    assert "補貨通知" in notifier.sent[0]

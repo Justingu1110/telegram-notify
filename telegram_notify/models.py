@@ -8,3 +8,9 @@ class Product:
     price: str
     url: str
     shipping: str
+
+
+@dataclass(frozen=True)
+class Stock:
+    text: str
+    status: str

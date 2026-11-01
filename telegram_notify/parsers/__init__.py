@@ -1,6 +1,6 @@
 from . import marukyu
 
-PARSERS = {"marukyu": marukyu.parse_list}
+PARSERS = {"marukyu": marukyu}
 
 
 def get_parser(name):

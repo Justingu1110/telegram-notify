@@ -12,21 +12,31 @@ def run_check(watches, fetch, notify, store):
     try:
         for watch in watches:
             entry = state.setdefault(watch.name, {})
-            parse_list = get_parser(watch.parser)
-            products, problem = _read_products(parse_list, fetch, watch.url)
+            parser = get_parser(watch.parser)
+            products, problem = _read_products(parser.parse_list, fetch, watch.url)
             if problem:
                 _count_failure(watch, entry, notify, problem)
                 continue
             entry["failures"] = 0
             if "products" not in entry:
                 notify(f"監控已啟動：{escape(watch.name)}\n目前記錄 {len(products)} 件商品")
-                entry["products"] = {p.id: _record(p) for p in products}
+                entry["products"] = {p.id: _record(p, _read_stock(parser, fetch, p.url)) for p in products}
                 continue
             known = entry["products"]
             for product in products:
+                stock = _read_stock(parser, fetch, product.url)
                 if product.id not in known:
-                    notify(_new_product_notification(product))
-                    known[product.id] = _record(product)
+                    notify(_product_notification("🆕 新品上架通知", product))
+                    known[product.id] = _record(product, stock)
+                    continue
+                record = known[product.id]
+                if stock and stock.status == "in_stock" and record["stock_status"] == "out_of_stock":
+                    notify(_product_notification("🔄 補貨通知", product))
+                _apply_stock(record, stock)
+            listed = {p.id for p in products}
+            for product_id, record in known.items():
+                if product_id not in listed:
+                    record["stock_status"] = "out_of_stock"
     finally:
         store.save(state)
 
@@ -52,12 +62,30 @@ def _shortened(text):
     return text if len(text) <= MAX_REASON_LENGTH else text[:MAX_REASON_LENGTH] + "…"
 
 
-def _record(product):
-    return {k: v for k, v in asdict(product).items() if k != "id"}
+def _read_stock(parser, fetch, url):
+    try:
+        return parser.parse_stock(fetch(url))
+    except Exception:
+        return None
 
 
-def _new_product_notification(product):
-    lines = ["🆕 新品上架通知", "", escape(product.name), f"價格: {escape(product.price)}"]
+def _record(product, stock):
+    record = {k: v for k, v in asdict(product).items() if k != "id"}
+    record["stock_text"] = stock.text if stock else ""
+    record["stock_status"] = stock.status if stock and stock.status != "unknown" else None
+    return record
+
+
+def _apply_stock(record, stock):
+    if stock is None:
+        return
+    record["stock_text"] = stock.text
+    if stock.status != "unknown":
+        record["stock_status"] = stock.status
+
+
+def _product_notification(title, product):
+    lines = [title, "", escape(product.name), f"價格: {escape(product.price)}"]
     if product.shipping:
         lines.append(f"⚠️ {escape(product.shipping)}")
     lines.append(escape(product.url))

@@ -1,12 +1,14 @@
 import html as html_lib
 import re
 
-from ..models import Product
+from ..models import Product, Stock
 
 _PID = re.compile(r"pid/(\d+)")
 _TITLE = re.compile(r'<h3><a href="([^"]*)">(.*?)</a></h3>', re.S)
 _PRICE = re.compile(r'<div class="price">(.*?)</div>', re.S)
 _NOTE = re.compile(r'<div class="text">(.*?)</div>', re.S)
+_OUT_OF_STOCK_WORDS = ("无库存", "缺货", "售罄", "售完")
+_STOCK = re.compile(r'<span class="data-name">\s*库存[:：]?\s*</span>\s*<span class="data-desc">(.*?)</span>', re.S)
 
 
 def parse_list(html):
@@ -24,6 +26,18 @@ def parse_list(html):
             )
         )
     return products
+
+
+def parse_stock(html):
+    match = _STOCK.search(html)
+    if not match:
+        return None
+    text = _plain_text(match.group(1))
+    if "有库存" in text:
+        return Stock(text=text, status="in_stock")
+    if any(word in text for word in _OUT_OF_STOCK_WORDS):
+        return Stock(text=text, status="out_of_stock")
+    return Stock(text=text, status="unknown")
 
 
 def _plain_text(fragment):
