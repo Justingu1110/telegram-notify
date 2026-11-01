@@ -323,3 +323,207 @@ def test_special_characters_in_the_price_and_shipping_note_are_escaped_too():
     assert "&lt;b&gt;9,140" in notifier.sent[0]
     assert "请注意&amp;仅配送中国地区" in notifier.sent[0]
     assert "<b>" not in notifier.sent[0]
+
+
+class FlakySite:
+    def __init__(self, pages):
+        self.pages = pages
+        self.down = set()
+
+    def __call__(self, url):
+        if url in self.down:
+            raise ConnectionError("site is down")
+        return self.pages[url]
+
+
+def check(watch, site, store, notifier):
+    run_check([watch], fetch=site, notify=notifier, store=store)
+
+
+def baselined_watch():
+    watch = load_watches()[0]
+    site = FlakySite({watch.url: real_list_page()})
+    store = MemoryStore()
+    check(watch, site, store, RecordingNotifier())
+    return watch, site, store
+
+
+def test_one_or_two_failed_checks_send_no_warning():
+    watch, site, store = baselined_watch()
+    notifier = RecordingNotifier()
+    site.down.add(watch.url)
+
+    for _ in range(2):
+        check(watch, site, store, notifier)
+
+    assert notifier.sent == []
+
+
+def test_the_third_failed_check_in_a_row_sends_one_warning_naming_the_watch():
+    watch, site, store = baselined_watch()
+    notifier = RecordingNotifier()
+    site.down.add(watch.url)
+
+    for _ in range(3):
+        check(watch, site, store, notifier)
+
+    assert len(notifier.sent) == 1
+    assert watch.name in notifier.sent[0]
+
+
+def test_further_failures_after_the_third_do_not_repeat_the_warning():
+    watch, site, store = baselined_watch()
+    notifier = RecordingNotifier()
+    site.down.add(watch.url)
+
+    for _ in range(6):
+        check(watch, site, store, notifier)
+
+    assert len(notifier.sent) == 1
+
+
+def test_one_success_resets_the_count_so_three_more_failures_are_needed():
+    watch, site, store = baselined_watch()
+    notifier = RecordingNotifier()
+    for _ in range(2):
+        site.down.add(watch.url)
+        check(watch, site, store, notifier)
+    site.down.clear()
+    check(watch, site, store, notifier)
+    site.down.add(watch.url)
+    for _ in range(2):
+        check(watch, site, store, notifier)
+    assert notifier.sent == []
+
+    check(watch, site, store, notifier)
+
+    assert len(notifier.sent) == 1
+
+
+def page_without_any_product(page):
+    return page.split(ITEM_MARKER)[0]
+
+
+def test_a_page_with_no_products_counts_as_a_failure_and_keeps_the_known_products():
+    watch, site, store = baselined_watch()
+    site.pages[watch.url] = page_without_any_product(real_list_page())
+    notifier = RecordingNotifier()
+
+    for _ in range(3):
+        check(watch, site, store, notifier)
+
+    assert len(notifier.sent) == 1
+    assert watch.name in notifier.sent[0]
+    assert set(store.state[watch.name]["products"]) == set(SHOWN_ON_LIST_PAGE)
+
+
+def test_a_page_with_no_products_is_not_recorded_as_a_baseline():
+    watch = load_watches()[0]
+    site = FlakySite({watch.url: page_without_any_product(real_list_page())})
+    store = MemoryStore()
+    notifier = RecordingNotifier()
+    check(watch, site, store, notifier)
+    assert notifier.sent == []
+
+    site.pages[watch.url] = real_list_page()
+    check(watch, site, store, notifier)
+
+    assert len(notifier.sent) == 1
+    assert "目前記錄 3 件商品" in notifier.sent[0]
+
+
+def test_a_page_whose_markup_the_parser_cannot_read_counts_as_a_failure():
+    watch, site, store = baselined_watch()
+    site.pages[watch.url] = real_list_page().replace('<div class="price">', '<div class="amount">', 1)
+    notifier = RecordingNotifier()
+
+    for _ in range(3):
+        check(watch, site, store, notifier)
+
+    assert len(notifier.sent) == 1
+    assert watch.name in notifier.sent[0]
+
+
+def test_products_already_known_are_not_announced_as_new_when_the_site_recovers():
+    watch, site, store = baselined_watch()
+    notifier = RecordingNotifier()
+    site.down.add(watch.url)
+    for _ in range(3):
+        check(watch, site, store, notifier)
+    warnings_sent = list(notifier.sent)
+    site.down.clear()
+
+    check(watch, site, store, notifier)
+
+    assert notifier.sent == warnings_sent
+
+
+def test_failures_before_the_first_baseline_are_counted_too():
+    watch = load_watches()[0]
+    site = FlakySite({watch.url: real_list_page()})
+    site.down.add(watch.url)
+    store = MemoryStore()
+    notifier = RecordingNotifier()
+
+    for _ in range(3):
+        check(watch, site, store, notifier)
+
+    assert len(notifier.sent) == 1
+    assert watch.name in notifier.sent[0]
+
+
+def test_a_watch_that_keeps_failing_does_not_stop_another_watch_from_being_checked():
+    first = load_watches()[0]
+    second = Watch(name="第二個監控項目", url=first.url + "?second=1", parser=first.parser)
+    full_page = real_list_page()
+    site = FlakySite({first.url: full_page, second.url: page_without_first_products(full_page)})
+    store = MemoryStore()
+    run_check([first, second], fetch=site, notify=RecordingNotifier(), store=store)
+    site.pages[second.url] = full_page
+    site.down.add(first.url)
+    notifier = RecordingNotifier()
+
+    for _ in range(3):
+        run_check([first, second], fetch=site, notify=notifier, store=store)
+
+    assert len(notifier.sent) == 2
+    assert f"{MARUKYU_LIST_URL}/pid/8835" in notifier.sent[0]
+    assert first.name in notifier.sent[1]
+    assert second.name not in notifier.sent[1]
+
+
+def test_the_warning_says_why_when_the_site_could_not_be_reached():
+    watch, site, store = baselined_watch()
+    site.down.add(watch.url)
+    notifier = RecordingNotifier()
+
+    for _ in range(3):
+        check(watch, site, store, notifier)
+
+    assert "site is down" in notifier.sent[0]
+
+
+def test_the_warning_says_why_when_no_products_could_be_read():
+    watch, site, store = baselined_watch()
+    site.pages[watch.url] = page_without_any_product(real_list_page())
+    notifier = RecordingNotifier()
+
+    for _ in range(3):
+        check(watch, site, store, notifier)
+
+    assert "解析不到任何商品" in notifier.sent[0]
+
+
+def test_a_warning_that_could_not_be_sent_is_sent_on_the_next_failed_check():
+    watch, site, store = baselined_watch()
+    site.down.add(watch.url)
+    for _ in range(2):
+        check(watch, site, store, RecordingNotifier())
+    with pytest.raises(RuntimeError):
+        check(watch, site, store, AlwaysFails())
+    notifier = RecordingNotifier()
+
+    check(watch, site, store, notifier)
+
+    assert len(notifier.sent) == 1
+    assert watch.name in notifier.sent[0]
