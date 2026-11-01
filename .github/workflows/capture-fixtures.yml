@@ -2,12 +2,6 @@ name: Capture Marukyu fixtures
 
 on:
   workflow_dispatch:
-  push:
-    branches:
-      - claude/keen-lovelace-5twwrm
-    paths:
-      - .github/workflows/capture-fixtures.yml
-      - scripts/capture_marukyu_fixtures.sh
 
 permissions:
   contents: write

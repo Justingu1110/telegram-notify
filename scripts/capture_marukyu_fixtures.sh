@@ -11,6 +11,7 @@ MAX_PRODUCTS=30
 USER_AGENT="Mozilla/5.0 (X11; Linux x86_64) telegram-notify-fixture-capture"
 
 mkdir -p "${OUT_DIR}/detail"
+rm -f "${OUT_DIR}"/detail/*.html
 
 fetch() {
   local url="$1" outfile="$2" result
@@ -63,13 +64,19 @@ for pid in "${pids[@]}"; do
   file="${OUT_DIR}/detail/${pid}.html"
   result="$(fetch "${url}" "${file}")"
   record "${file}" "${url}" "${result}"
+  if [ "${result%% *}" != "200" ]; then
+    echo "::error::Detail page ${url} did not return HTTP 200 (${result}); stopping."
+    exit 1
+  fi
 done
 
 echo
 echo "== Scan for secrets or personal data =="
 secret_pattern='(csrf|_token|sessionid|phpsessid)[A-Za-z_]*[" ]*[=:][ "]*[A-Za-z0-9+/=_-]{16,}'
 email_pattern='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
-suspicious="$(grep -rniE -o ".{0,40}(${secret_pattern}|${email_pattern}).{0,40}" "${OUT_DIR}" --include='*.html' | grep -viE 'marukyu-koyamaen' || true)"
+secret_hits="$(grep -rniE -o ".{0,40}${secret_pattern}.{0,40}" "${OUT_DIR}" --include='*.html' || true)"
+email_hits="$(grep -rnoiE "${email_pattern}" "${OUT_DIR}" --include='*.html' | grep -viE '@([A-Za-z0-9-]+\.)*marukyu-koyamaen\.' || true)"
+suspicious="${secret_hits}${email_hits}"
 if [ -n "${suspicious}" ]; then
   echo "${suspicious}"
   echo "::error::Possible secrets or personal data in the captured pages; not committing. Review the matches above."
