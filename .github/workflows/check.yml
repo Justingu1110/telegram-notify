@@ -1,4 +1,4 @@
-name: Check the shop
+name: Check the watches
 
 on:
   schedule:
@@ -9,11 +9,12 @@ permissions:
   contents: write
 
 concurrency:
-  group: check-the-shop
+  group: check-the-watches
   cancel-in-progress: false
 
 jobs:
   check:
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
