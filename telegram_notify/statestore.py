@@ -2,6 +2,8 @@ import json
 import os
 import subprocess
 
+from .telegram import CHAT_VARIABLE, TOKEN_VARIABLE
+
 _IDENTITY = {
     "GIT_AUTHOR_NAME": "telegram-notify",
     "GIT_AUTHOR_EMAIL": "telegram-notify@users.noreply.github.com",
@@ -12,6 +14,11 @@ _IDENTITY = {
 
 class StateStoreError(Exception):
     pass
+
+
+def _environment_for_git():
+    inherited = {k: v for k, v in os.environ.items() if k not in (TOKEN_VARIABLE, CHAT_VARIABLE)}
+    return {**inherited, "GIT_TERMINAL_PROMPT": "0"}
 
 
 class GitStateStore:
@@ -28,10 +35,14 @@ class GitStateStore:
         self._loaded_text = None
         if not self._git("ls-remote", "--heads", self._remote, self._branch).strip():
             return {}
-        self._git("fetch", "-q", self._remote, f"+refs/heads/{self._branch}:refs/remotes/{self._remote}/{self._branch}")
-        self._parent = self._git("rev-parse", f"refs/remotes/{self._remote}/{self._branch}").strip()
+        tracking_ref = f"refs/remotes/{self._remote}/{self._branch}"
+        self._git("fetch", "-q", self._remote, f"+refs/heads/{self._branch}:{tracking_ref}")
+        self._parent = self._git("rev-parse", tracking_ref).strip()
         self._loaded_text = self._git("show", f"{self._parent}:{self._path}")
-        return json.loads(self._loaded_text)
+        try:
+            return json.loads(self._loaded_text)
+        except ValueError as error:
+            raise StateStoreError(f"{self._path} on branch '{self._branch}' is not valid JSON: {error}") from None
 
     def save(self, state):
         text = json.dumps(state, ensure_ascii=False, indent=2, sort_keys=True) + "\n"
@@ -54,7 +65,7 @@ class GitStateStore:
             input=input,
             capture_output=True,
             text=True,
-            env={**os.environ, **(env or {})},
+            env={**_environment_for_git(), **(env or {})},
         )
         if result.returncode != 0:
             raise StateStoreError(f"git {args[0]} failed: {result.stderr.strip()}")

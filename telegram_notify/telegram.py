@@ -36,11 +36,12 @@ class TelegramNotifier:
         except requests.RequestException as error:
             raise TelegramError(f"could not reach Telegram ({type(error).__name__})") from None
         if not response.ok:
-            raise TelegramError(f"Telegram rejected the message (HTTP {response.status_code}): {_reason(response)}")
+            raise TelegramError(f"Telegram rejected the notification (HTTP {response.status_code}): {_reason(response)}")
 
 
 def _reason(response):
     try:
-        return response.json().get("description", "")
+        body = response.json()
     except ValueError:
         return ""
+    return body.get("description", "") if isinstance(body, dict) else ""

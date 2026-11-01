@@ -1,3 +1,6 @@
+import os
+import shutil
+
 import pytest
 from git_helpers import git, make_checkout, make_remote
 from telegram_notify.statestore import GitStateStore, StateStoreError
@@ -108,3 +111,48 @@ def test_an_unreachable_remote_is_an_error_and_not_an_empty_record(tmp_path):
 
     with pytest.raises(StateStoreError):
         GitStateStore(checkout).load()
+
+
+def test_a_record_that_is_not_valid_json_is_reported_with_where_it_was_found(tmp_path):
+    remote = make_remote(tmp_path)
+    work = make_checkout(tmp_path, remote, "dev")
+    (work / "state.json").write_text("{ not json", encoding="utf-8")
+    git("add", "state.json", cwd=work)
+    git("-c", "user.name=t", "-c", "user.email=t@example.com", "commit", "-q", "-m", "broken", cwd=work)
+    git("push", "-q", "origin", "HEAD:refs/heads/state", cwd=work)
+
+    with pytest.raises(StateStoreError) as caught:
+        GitStateStore(make_checkout(tmp_path, remote, "run1")).load()
+
+    assert "state.json" in str(caught.value)
+    assert "state" in str(caught.value)
+
+
+def test_git_is_run_without_the_telegram_settings_and_never_waits_for_a_prompt(tmp_path, monkeypatch):
+    remote = make_remote(tmp_path)
+    checkout = make_checkout(tmp_path, remote, "run1")
+    log = tmp_path / "git-environment.log"
+    bin_dir = tmp_path / "bin"
+    bin_dir.mkdir()
+    wrapper = bin_dir / "git"
+    wrapper.write_text(f'#!/bin/sh\nenv >> "{log}"\nexec "{shutil.which("git")}" "$@"\n', encoding="utf-8")
+    wrapper.chmod(0o755)
+    monkeypatch.setenv("PATH", f"{bin_dir}{os.pathsep}{os.environ['PATH']}")
+    monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "123456789:SECRET-TOKEN-VALUE")
+    monkeypatch.setenv("TELEGRAM_CHAT_ID", "8607183589")
+
+    GitStateStore(checkout).load()
+
+    seen = log.read_text(encoding="utf-8")
+    assert "SECRET-TOKEN-VALUE" not in seen
+    assert "8607183589" not in seen
+    assert "GIT_TERMINAL_PROMPT=0" in seen
+
+
+def test_credentials_inside_a_remote_url_do_not_end_up_in_the_error_text(tmp_path):
+    checkout = make_checkout(tmp_path, "https://someone:s3cret-password@127.0.0.1:9/repo.git", "run1")
+
+    with pytest.raises(StateStoreError) as caught:
+        GitStateStore(checkout).load()
+
+    assert "s3cret-password" not in str(caught.value)

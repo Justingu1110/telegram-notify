@@ -26,7 +26,7 @@ export TELEGRAM_CHAT_ID='（要接收通知的 Chat ID）'
 python3 -m telegram_notify
 ```
 
-注意：這會**真的**向商店發請求、真的傳 Telegram 訊息，並把紀錄推到目前這個 repo 的 `origin` 的 `state` 分支。只想試跑的話，請在一個暫時的 clone 裡執行，或改用另一個 Chat ID。缺少任何一個環境變數時會直接停止並說明缺哪個。token 只放在環境變數或 GitHub Actions Secrets，不要寫進任何檔案。
+注意：這會**真的**向商店發請求、真的傳 Telegram 訊息，並把紀錄推到目前這個 repo 的 `origin` 的 `state` 分支（所以需要有寫入 `origin` 的權限）。只想試跑的話，請在一個暫時的 clone 裡執行，或改用另一個 Chat ID。缺少任何一個環境變數時會直接停止並說明缺哪個。token 只放在環境變數或 GitHub Actions Secrets，不要寫進任何檔案。
 
 ## 檔案
 

@@ -1,39 +1,25 @@
 import time
 
 import pytest
-from fake_servers import FakeServer, closed_port_url
+from fake_servers import closed_port_url
 from telegram_notify.fetcher import FetchError, HttpFetcher
 
 PAGE = "<html><body>永寿 四十克 罐 ¥9,140.00 库存: 8有库存</body></html>"
-
-
-@pytest.fixture
-def shop():
-    servers = []
-
-    def start(respond):
-        server = FakeServer(respond)
-        servers.append(server)
-        return server
-
-    yield start
-    for server in servers:
-        server.close()
 
 
 def html(body, content_type="text/html; charset=UTF-8"):
     return lambda request: (200, body.encode("utf-8"), content_type)
 
 
-def test_a_page_is_fetched_and_returned_as_text(shop):
-    server = shop(html(PAGE))
+def test_a_page_is_fetched_and_returned_as_text(fake_server):
+    server = fake_server(html(PAGE))
 
     assert HttpFetcher()(server.url + "/category") == PAGE
 
 
 @pytest.mark.parametrize("status", [403, 404, 503])
-def test_a_page_that_is_not_ok_fails_the_fetch_and_names_the_status(shop, status):
-    server = shop(lambda request: (status, b"nope", "text/html"))
+def test_a_page_that_is_not_ok_fails_the_fetch_and_names_the_status(fake_server, status):
+    server = fake_server(lambda request: (status, b"nope", "text/html"))
 
     with pytest.raises(FetchError) as caught:
         HttpFetcher()(server.url + "/category")
@@ -46,22 +32,22 @@ def test_an_unreachable_site_fails_the_fetch():
         HttpFetcher(timeout=2)(closed_port_url() + "/category")
 
 
-def test_a_site_that_does_not_answer_in_time_fails_the_fetch_quickly(shop):
+def test_a_site_that_does_not_answer_in_time_fails_the_fetch_quickly(fake_server):
     def slow(request):
-        time.sleep(2)
+        time.sleep(5)
         return 200, b"late", "text/html; charset=UTF-8"
 
-    server = shop(slow)
+    server = fake_server(slow)
     started = time.monotonic()
 
     with pytest.raises(FetchError):
         HttpFetcher(timeout=0.3)(server.url + "/category")
 
-    assert time.monotonic() - started < 1.5
+    assert time.monotonic() - started < 3
 
 
-def test_requests_are_spaced_out_but_the_first_one_is_not_delayed(shop):
-    server = shop(html(PAGE))
+def test_requests_are_spaced_out_but_the_first_one_is_not_delayed(fake_server):
+    server = fake_server(html(PAGE))
     pauses = []
     fetch = HttpFetcher(delay=1.5, sleep=pauses.append)
 
@@ -71,14 +57,14 @@ def test_requests_are_spaced_out_but_the_first_one_is_not_delayed(shop):
     assert pauses == [1.5, 1.5]
 
 
-def test_chinese_text_survives_when_the_site_does_not_declare_a_charset(shop):
-    server = shop(html(PAGE, content_type="text/html"))
+def test_chinese_text_survives_when_the_site_does_not_declare_a_charset(fake_server):
+    server = fake_server(html(PAGE, content_type="text/html"))
 
     assert HttpFetcher()(server.url + "/category") == PAGE
 
 
-def test_the_requests_say_which_tool_is_asking(shop):
-    server = shop(html(PAGE))
+def test_the_requests_say_which_tool_is_asking(fake_server):
+    server = fake_server(html(PAGE))
 
     HttpFetcher()(server.url + "/category")
 

@@ -1,13 +1,18 @@
 import json
 import re
-from pathlib import Path
 
 import pytest
 
+from pages import (
+    MARUKYU_LIST_URL,
+    detail_page_saying,
+    detail_url,
+    page_without_any_product,
+    page_without_first_products,
+    real_detail_page,
+    real_list_page,
+)
 from telegram_notify import Watch, load_watches, run_check
-
-FIXTURES = Path(__file__).parent / "fixtures" / "marukyu"
-MARUKYU_LIST_URL = "https://www.marukyu-koyamaen.net/category/select/cid/312"
 
 # What the real list page shows for each product (the shop itself truncates two names).
 SHOWN_ON_LIST_PAGE = {
@@ -51,10 +56,6 @@ class MemoryStore:
 
     def save(self, state):
         self._saved = json.dumps(state, ensure_ascii=False)
-
-
-def real_list_page():
-    return (FIXTURES / "list.html").read_text(encoding="utf-8")
 
 
 def test_first_run_sends_one_startup_summary_with_product_count():
@@ -187,15 +188,6 @@ def test_first_run_records_html_entities_in_name_price_and_note_as_plain_charact
     assert record["name"] == "永寿 & 罐 <40g>"
     assert record["price"] == "¥9,140.00"
     assert "请注意&仅配送中国地区" in record["shipping"]
-
-
-ITEM_MARKER = '<div class="item">'
-
-
-def page_without_first_products(page, count=1):
-    head, *blocks = page.split(ITEM_MARKER)
-    remaining = len(blocks) - count
-    return ITEM_MARKER.join([head, *blocks[count:]]).replace(f"{len(blocks)} 件中", f"{remaining} 件中")
 
 
 def run_after_baseline(baseline_page, later_page, notifier=None):
@@ -401,10 +393,6 @@ def test_one_success_resets_the_count_so_three_more_failures_are_needed():
     assert len(notifier.sent) == 1
 
 
-def page_without_any_product(page):
-    return page.split(ITEM_MARKER)[0].replace("3 件中", "0 件中")
-
-
 def test_a_page_with_no_products_counts_as_a_failure_and_keeps_the_known_products():
     watch, site, store = baselined_watch()
     site.pages[watch.url] = page_without_any_product(real_list_page())
@@ -560,24 +548,6 @@ def test_a_very_long_failure_reason_is_shortened_in_the_warning():
 
     assert "boom" in notifier.sent[0]
     assert len(notifier.sent[0]) < 500
-
-
-def detail_url(pid):
-    return f"{MARUKYU_LIST_URL}/pid/{pid}"
-
-
-def real_detail_page(pid):
-    return (FIXTURES / "detail" / f"{pid}.html").read_text(encoding="utf-8")
-
-
-def detail_page_saying(pid, stock_text):
-    return re.sub(
-        r'(库存:</span>\s*<span class="data-desc">).*?(</span>)',
-        lambda m: m.group(1) + stock_text + m.group(2),
-        real_detail_page(pid),
-        count=1,
-        flags=re.S,
-    )
 
 
 def full_site(list_page=None):
