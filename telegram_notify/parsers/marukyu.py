@@ -6,6 +6,7 @@ from ..models import Product, Stock
 _PID = re.compile(r"pid/(\d+)")
 _TITLE = re.compile(r'<h3><a href="([^"]*)">(.*?)</a></h3>', re.S)
 _PRICE = re.compile(r'<div class="price">(.*?)</div>', re.S)
+_TOTAL = re.compile(r"<dt>\s*(\d+)\s*件中\s*</dt>")
 _NOTE = re.compile(r'<div class="text">(.*?)</div>', re.S)
 # No sold-out page has been seen yet, so these wordings are guesses; unrecognised texts count as unknown.
 _OUT_OF_STOCK_WORDS = ("无库存", "没有库存", "缺货", "售罄", "售完")
@@ -27,6 +28,9 @@ def parse_list(html):
                 shipping=_plain_text(note.group(1)) if note else "",
             )
         )
+    total = _TOTAL.search(html)
+    if total and int(total.group(1)) != len(products):
+        raise ValueError(f"the page says {total.group(1)} products but {len(products)} were read")
     return products
 
 

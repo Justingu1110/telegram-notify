@@ -194,7 +194,8 @@ ITEM_MARKER = '<div class="item">'
 
 def page_without_first_products(page, count=1):
     head, *blocks = page.split(ITEM_MARKER)
-    return ITEM_MARKER.join([head, *blocks[count:]])
+    remaining = len(blocks) - count
+    return ITEM_MARKER.join([head, *blocks[count:]]).replace(f"{len(blocks)} 件中", f"{remaining} 件中")
 
 
 def run_after_baseline(baseline_page, later_page, notifier=None):
@@ -401,7 +402,7 @@ def test_one_success_resets_the_count_so_three_more_failures_are_needed():
 
 
 def page_without_any_product(page):
-    return page.split(ITEM_MARKER)[0]
+    return page.split(ITEM_MARKER)[0].replace("3 件中", "0 件中")
 
 
 def test_a_page_with_no_products_counts_as_a_failure_and_keeps_the_known_products():
@@ -828,3 +829,29 @@ def test_a_text_saying_there_is_no_stock_is_not_read_as_in_stock(sold_out_text):
 
     assert len(notifier.sent) == 2
     assert "補貨通知" in notifier.sent[1]
+
+
+def test_a_list_page_that_lists_fewer_products_than_it_says_it_has_counts_as_a_failure():
+    watch, site, store = baselined_site()
+    site.pages[watch.url] = real_list_page().replace("3 件中", "5 件中")
+    notifier = RecordingNotifier()
+
+    for _ in range(3):
+        run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert len(notifier.sent) == 1
+    assert "監控異常" in notifier.sent[0]
+    assert "5" in notifier.sent[0]
+    statuses = {p["stock_status"] for p in store.state[watch.name]["products"].values()}
+    assert statuses == {"in_stock"}
+
+
+def test_a_list_page_that_shows_no_total_is_still_read_normally():
+    watch = load_watches()[0]
+    page = real_list_page().replace("<dt>3 件中</dt>", "")
+    notifier = RecordingNotifier()
+
+    run_check([watch], fetch=full_site(page), notify=notifier, store=MemoryStore())
+
+    assert len(notifier.sent) == 1
+    assert "目前記錄 3 件商品" in notifier.sent[0]
