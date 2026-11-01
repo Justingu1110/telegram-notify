@@ -16,7 +16,17 @@ python3 -m pytest
 ```
 
 - 要監控的網頁寫在 `watches.toml`，每個 `[[watch]]` 是一個 Watch（名稱、網址、使用哪個網站解析程式）。
-- 測試只從「執行一次檢查」這個入口進行，網頁、Telegram、紀錄三處都換成假的；網頁用 `tests/fixtures/marukyu/` 裡抓回來的真實原始網頁碼。
+- 核心測試從「執行一次檢查」進行，網頁、Telegram、紀錄三處換成假的；網頁用 `tests/fixtures/marukyu/` 裡抓回來的真實原始網頁碼。真實的網頁取得、Telegram 發送、紀錄存取，則用本機的假伺服器與暫時的 git 儲存庫測試。
+
+### 在本機執行一次檢查
+
+```bash
+export TELEGRAM_BOT_TOKEN='（BotFather 給的 token）'
+export TELEGRAM_CHAT_ID='（要接收通知的 Chat ID）'
+python3 -m telegram_notify
+```
+
+注意：這會**真的**向商店發請求、真的傳 Telegram 訊息，並把紀錄推到目前這個 repo 的 `origin` 的 `state` 分支。只想試跑的話，請在一個暫時的 clone 裡執行，或改用另一個 Chat ID。缺少任何一個環境變數時會直接停止並說明缺哪個。token 只放在環境變數或 GitHub Actions Secrets，不要寫進任何檔案。
 
 ## 檔案
 
