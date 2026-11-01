@@ -67,7 +67,9 @@ done
 
 echo
 echo "== Scan for secrets or personal data =="
-suspicious="$(grep -rniE -o '.{0,40}(csrf|_token|sessionid|phpsessid|[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}).{0,40}' "${OUT_DIR}" --include='*.html' | grep -viE 'marukyu-koyamaen' || true)"
+secret_pattern='(csrf|_token|sessionid|phpsessid)[A-Za-z_]*[" ]*[=:][ "]*[A-Za-z0-9+/=_-]{16,}'
+email_pattern='[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}'
+suspicious="$(grep -rniE -o ".{0,40}(${secret_pattern}|${email_pattern}).{0,40}" "${OUT_DIR}" --include='*.html' | grep -viE 'marukyu-koyamaen' || true)"
 if [ -n "${suspicious}" ]; then
   echo "${suspicious}"
   echo "::error::Possible secrets or personal data in the captured pages; not committing. Review the matches above."
