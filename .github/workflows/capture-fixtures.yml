@@ -1,0 +1,40 @@
+name: Capture Marukyu fixtures
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - claude/keen-lovelace-5twwrm
+    paths:
+      - .github/workflows/capture-fixtures.yml
+      - scripts/capture_marukyu_fixtures.sh
+
+permissions:
+  contents: write
+
+concurrency:
+  group: capture-fixtures
+  cancel-in-progress: false
+
+jobs:
+  capture:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Capture pages
+        run: bash scripts/capture_marukyu_fixtures.sh
+
+      - name: Commit fixtures
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add tests/fixtures/marukyu
+          if git diff --cached --quiet; then
+            echo "No changes to commit."
+            exit 0
+          fi
+          git commit -m "Capture raw Marukyu-Koyamaen pages as test fixtures"
+          git pull --rebase origin "${GITHUB_REF_NAME}"
+          git push origin "HEAD:${GITHUB_REF_NAME}"
