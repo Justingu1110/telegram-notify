@@ -28,6 +28,17 @@ python3 -m telegram_notify
 
 注意：這會**真的**向商店發請求、真的傳 Telegram 訊息，並把紀錄推到目前這個 repo 的 `origin` 的 `state` 分支（所以需要有寫入 `origin` 的權限）。只想試跑的話，請在一個暫時的 clone 裡執行，或改用另一個 Chat ID。缺少任何一個環境變數時會直接停止並說明缺哪個。token 只放在環境變數或 GitHub Actions Secrets，不要寫進任何檔案。
 
+## 定時執行
+
+GitHub 自己的排程（`schedule`）實測沒有觸發過，所以改由一個外部的免費定時服務，每 15 分鐘呼叫一次工作流程的「手動觸發」。GitHub 的排程仍保留當備援，重複觸發不會重複通知（見 `docs/adr/0002-trigger-from-an-external-timer.md`）。
+
+定時服務的設定：
+
+- 網址：`https://api.github.com/repos/Justingu1110/telegram-notify/actions/workflows/check.yml/dispatches`
+- 方法：`POST`，內容：`{"ref":"main"}`，成功的回應是 HTTP 204
+- 標頭：`Authorization: Bearer <權杖>`、`Accept: application/vnd.github+json`
+- 權杖：fine-grained，只選這個 repo，權限只要 **Actions: Read and write**；90 天到期，**到期前要換新的**，否則檢查會悄悄停止
+
 ## 檔案
 
 - `matcha_monitor.py` — 主程式。抓取商品頁、解析商品清單、比對狀態、發送 Telegram 通知。
