@@ -2,5 +2,4 @@
 !.claude/skills/
 node_modules/
 dist/
-matcha_monitor_state.json
 __pycache__/
