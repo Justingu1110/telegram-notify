@@ -4,6 +4,20 @@
 
 監控網址：https://www.marukyu-koyamaen.net/category/select/cid/312
 
+> 專案正在改寫成通用的網頁監控工具（規格見 issue #1）。下面的「開發」是新版，「檔案」以後的內容是舊版腳本，改寫完成後會整份更新。
+
+## 開發
+
+安裝相依套件並執行測試：
+
+```bash
+pip install -r requirements-dev.txt
+python3 -m pytest
+```
+
+- 要監控的網頁寫在 `watches.toml`，每個 `[[watch]]` 是一個 Watch（名稱、網址、使用哪個網站解析程式）。
+- 測試只從「執行一次檢查」這個入口進行，網頁、Telegram、紀錄三處都換成假的；網頁用 `tests/fixtures/marukyu/` 裡抓回來的真實原始網頁碼。
+
 ## 檔案
 
 - `matcha_monitor.py` — 主程式。抓取商品頁、解析商品清單、比對狀態、發送 Telegram 通知。
