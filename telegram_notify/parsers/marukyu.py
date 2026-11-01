@@ -1,3 +1,4 @@
+import html as html_lib
 import re
 
 from ..models import Product
@@ -16,8 +17,8 @@ def parse_list(html):
         products.append(
             Product(
                 id=_PID.search(block).group(1),
-                name=name.strip(),
-                price=_PRICE.search(block).group(1).strip(),
+                name=html_lib.unescape(name).strip(),
+                price=html_lib.unescape(_PRICE.search(block).group(1)).strip(),
                 url=url.strip(),
                 shipping=_plain_text(note.group(1)) if note else "",
             )
@@ -28,5 +29,5 @@ def parse_list(html):
 def _plain_text(fragment):
     # The shop itself cuts this text off mid-tag (e.g. "<strong s..."), so drop a trailing half-open tag first.
     fragment = re.sub(r"<[^>]*$", "", fragment)
-    text = re.sub(r"<[^>]+>", " ", fragment)
+    text = html_lib.unescape(re.sub(r"<[^>]+>", " ", fragment))
     return re.sub(r"\s+", " ", text).strip()

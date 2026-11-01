@@ -8,7 +8,7 @@
 
 ## 開發
 
-安裝相依套件並執行測試：
+需要 Python 3.11 以上（設定檔用內建的 `tomllib` 讀取）。安裝相依套件並執行測試：
 
 ```bash
 pip install -r requirements-dev.txt

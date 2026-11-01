@@ -165,3 +165,19 @@ def test_every_watch_listed_in_the_config_file_is_checked_in_order(tmp_path):
     assert len(notifier.sent) == 2
     assert "甲" in notifier.sent[0]
     assert "乙" in notifier.sent[1]
+
+
+def test_first_run_records_html_entities_in_name_price_and_note_as_plain_characters():
+    page = real_list_page()
+    page = page.replace("永寿 四十克 罐 （Matcha Eiju 40g can）", "永寿 &amp; 罐 &lt;40g&gt;")
+    page = page.replace("¥9,140.00", "&yen;9,140.00")
+    page = page.replace("请注意，仅配送中国地区", "请注意&amp;仅配送中国地区")
+    watch = load_watches()[0]
+    store = MemoryStore()
+
+    run_check([watch], fetch=FakeSite({watch.url: page}), notify=RecordingNotifier(), store=store)
+
+    record = store.state[watch.name]["products"]["8835"]
+    assert record["name"] == "永寿 & 罐 <40g>"
+    assert record["price"] == "¥9,140.00"
+    assert "请注意&仅配送中国地区" in record["shipping"]
