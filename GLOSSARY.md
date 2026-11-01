@@ -12,6 +12,14 @@ _Avoid_: Monitor, target, job, task
 An item listed on a Watch's page, identified by the ID the shop gives it.
 _Avoid_: Item, listing
 
+**In stock** (有庫存):
+A Product is in stock when it is listed on its Watch's page and the shop's own stock text says it is available.
+_Avoid_: Available
+
+**Out of stock** (缺貨):
+A Product that is not in stock: it has dropped off the Watch's page, or the shop's stock text says there is none. A stock text the system does not recognise is neither; it changes nothing and is only recorded.
+_Avoid_: Sold out, unavailable
+
 **Baseline** (基準線):
 The first recording of a Watch's Products, kept so later runs have something to compare against. Recording a Baseline produces no Event.
 _Avoid_: Snapshot, initial state

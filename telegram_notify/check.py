@@ -11,34 +11,44 @@ def run_check(watches, fetch, notify, store):
     state = store.load()
     try:
         for watch in watches:
-            entry = state.setdefault(watch.name, {})
-            parser = get_parser(watch.parser)
-            products, problem = _read_products(parser.parse_list, fetch, watch.url)
-            if problem:
-                _count_failure(watch, entry, notify, problem)
-                continue
-            entry["failures"] = 0
-            if "products" not in entry:
-                notify(f"監控已啟動：{escape(watch.name)}\n目前記錄 {len(products)} 件商品")
-                entry["products"] = {p.id: _record(p, _read_stock(parser, fetch, p.url)) for p in products}
-                continue
-            known = entry["products"]
-            for product in products:
-                stock = _read_stock(parser, fetch, product.url)
-                if product.id not in known:
-                    notify(_product_notification("🆕 新品上架通知", product))
-                    known[product.id] = _record(product, stock)
-                    continue
-                record = known[product.id]
-                if stock and stock.status == "in_stock" and record["stock_status"] == "out_of_stock":
-                    notify(_product_notification("🔄 補貨通知", product))
-                _apply_stock(record, stock)
-            listed = {p.id for p in products}
-            for product_id, record in known.items():
-                if product_id not in listed:
-                    record["stock_status"] = "out_of_stock"
+            _check_watch(watch, state.setdefault(watch.name, {}), fetch, notify)
     finally:
         store.save(state)
+
+
+def _check_watch(watch, entry, fetch, notify):
+    parser = get_parser(watch.parser)
+    products, problem = _read_products(parser.parse_list, fetch, watch.url)
+    if problem:
+        _count_failure(watch, entry, notify, problem)
+        return
+    entry["failures"] = 0
+    if "products" not in entry:
+        _start_watching(watch, entry, products, parser, fetch, notify)
+    else:
+        _notice_changes(entry["products"], products, parser, fetch, notify)
+
+
+def _start_watching(watch, entry, products, parser, fetch, notify):
+    notify(f"監控已啟動：{escape(watch.name)}\n目前記錄 {len(products)} 件商品")
+    entry["products"] = {p.id: _record(p, _read_stock(parser, fetch, p.url)) for p in products}
+
+
+def _notice_changes(known, products, parser, fetch, notify):
+    for product in products:
+        stock = _read_stock(parser, fetch, product.url)
+        if product.id not in known:
+            notify(_product_notification("🆕 新品上架通知", product))
+            known[product.id] = _record(product, stock)
+            continue
+        record = known[product.id]
+        if stock and stock.status == "in_stock" and record["stock_status"] == "out_of_stock":
+            notify(_product_notification("🔄 補貨通知", product))
+        _apply_stock(record, stock)
+    listed = {p.id for p in products}
+    for product_id, record in known.items():
+        if product_id not in listed:
+            record["stock_status"] = "out_of_stock"
 
 
 def _read_products(parse_list, fetch, url):

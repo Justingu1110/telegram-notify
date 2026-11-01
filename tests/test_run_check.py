@@ -811,3 +811,20 @@ def test_a_restock_notification_that_could_not_be_sent_is_sent_on_the_next_run()
 
     assert len(notifier.sent) == 1
     assert "補貨通知" in notifier.sent[0]
+
+
+@pytest.mark.parametrize("sold_out_text", ["没有库存", "暂时没有库存"])
+def test_a_text_saying_there_is_no_stock_is_not_read_as_in_stock(sold_out_text):
+    watch = load_watches()[0]
+    site = full_site()
+    site.pages[detail_url("8835")] = detail_page_saying("8835", sold_out_text)
+    store = MemoryStore()
+    notifier = RecordingNotifier()
+    run_check([watch], fetch=site, notify=notifier, store=store)
+    assert len(notifier.sent) == 1
+    site.pages[detail_url("8835")] = real_detail_page("8835")
+
+    run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert len(notifier.sent) == 2
+    assert "補貨通知" in notifier.sent[1]
