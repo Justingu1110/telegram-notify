@@ -206,22 +206,22 @@ def run_after_baseline(baseline_page, later_page, notifier=None):
     return notifier
 
 
-def test_new_product_after_baseline_is_announced_once_with_its_details():
+def test_new_product_after_baseline_is_notified_once_with_its_details():
     full_page = real_list_page()
 
     notifier = run_after_baseline(page_without_first_products(full_page), full_page)
 
     assert len(notifier.sent) == 1
-    message = notifier.sent[0]
-    assert "新品上架通知" in message
-    assert "永寿 四十克 罐 （Matcha Eiju 40g can）" in message
-    assert "¥9,140.00" in message
-    assert f"{MARUKYU_LIST_URL}/pid/8835" in message
-    assert "⚠️" in message
-    assert "仅配送中国地区，不包含台湾香港澳门" in message
+    notification = notifier.sent[0]
+    assert "新品上架通知" in notification
+    assert "永寿 四十克 罐 （Matcha Eiju 40g can）" in notification
+    assert "¥9,140.00" in notification
+    assert f"{MARUKYU_LIST_URL}/pid/8835" in notification
+    assert "⚠️" in notification
+    assert "仅配送中国地区，不包含台湾香港澳门" in notification
 
 
-def test_a_product_announced_once_is_not_announced_again():
+def test_a_product_notified_once_is_not_notified_again():
     full_page = real_list_page()
     watch = load_watches()[0]
     store = MemoryStore()
@@ -234,7 +234,7 @@ def test_a_product_announced_once_is_not_announced_again():
     assert notifier.sent == []
 
 
-def test_each_of_several_new_products_gets_its_own_announcement_in_page_order():
+def test_each_of_several_new_products_gets_its_own_notification_in_page_order():
     full_page = real_list_page()
 
     notifier = run_after_baseline(page_without_first_products(full_page, 2), full_page)
@@ -272,7 +272,7 @@ class FailsOnSecondSend:
         self.sent.append(text)
 
 
-def test_a_failed_send_does_not_cause_already_announced_products_to_be_announced_again():
+def test_a_failed_send_does_not_cause_already_notified_products_to_be_notified_again():
     full_page = real_list_page()
     watch = load_watches()[0]
     store = MemoryStore()
@@ -313,3 +313,13 @@ def test_special_characters_in_a_watch_name_are_escaped_in_the_startup_summary()
     run_check([watch], fetch=FakeSite({watch.url: real_list_page()}), notify=notifier, store=MemoryStore())
 
     assert "A&amp;B &lt;c&gt;" in notifier.sent[0]
+
+
+def test_special_characters_in_the_price_and_shipping_note_are_escaped_too():
+    full_page = real_list_page().replace("¥9,140.00", "&lt;b&gt;9,140").replace("请注意，仅配送中国地区", "请注意&amp;仅配送中国地区")
+
+    notifier = run_after_baseline(page_without_first_products(full_page), full_page)
+
+    assert "&lt;b&gt;9,140" in notifier.sent[0]
+    assert "请注意&amp;仅配送中国地区" in notifier.sent[0]
+    assert "<b>" not in notifier.sent[0]

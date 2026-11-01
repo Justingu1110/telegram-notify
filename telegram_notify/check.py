@@ -16,7 +16,7 @@ def run_check(watches, fetch, notify, store):
             known = state[watch.name]["products"]
             for product in products:
                 if product.id not in known:
-                    notify(_new_product_message(product))
+                    notify(_new_product_notification(product))
                     known[product.id] = _record(product)
     finally:
         store.save(state)
@@ -26,7 +26,7 @@ def _record(product):
     return {k: v for k, v in asdict(product).items() if k != "id"}
 
 
-def _new_product_message(product):
+def _new_product_notification(product):
     lines = ["🆕 新品上架通知", "", escape(product.name), f"價格: {escape(product.price)}"]
     if product.shipping:
         lines.append(f"⚠️ {escape(product.shipping)}")
