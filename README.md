@@ -12,7 +12,7 @@
 - 之後偵測兩種 **Event**（事件），各發一則 **Notification**（通知）：
   - **New Product**（新品上架）：出現從沒見過的商品。
   - **Restock**（補貨）：商品從缺貨變成有庫存（從列表消失後回來，或庫存文字從缺貨用語變回「有库存」）。
-- 網頁連不上、讀不出來或解析不到任何商品，算一次 **Failure**（失敗），不會動到已記錄的商品；連續失敗 3 次發一則 **Warning**（警告），成功一次就歸零。
+- **列表頁**連不上、讀不出來或解析不到任何商品，算一次 **Failure**（失敗），不會動到已記錄的商品；連續失敗 3 次發一則 **Warning**（警告），成功一次就歸零。單一商品的詳細頁讀不到**不算** Failure，只是這次略過那件商品的庫存判斷（狀態維持原樣，所以那次可能漏掉一次補貨）。
 - 沒看過的庫存文字不產生任何 Event，也不改變原本的狀態，只記錄原文。
 - 已知商品的紀錄存在本 repo 的 `state` 分支（`state.json`），不放 `main`，所以每次執行都從上次的狀態接續。
 
@@ -38,7 +38,9 @@ GitHub 會把它們在日誌裡遮成 `***`，存進去之後也沒有任何方�
 
 ## 定時執行
 
-GitHub 自己的排程（`schedule`）在這個 repo 實測沒有觸發過，所以改由一個外部的免費定時服務（Cloudflare Workers 的 Cron Trigger）每 15 分鐘呼叫一次工作流程的「手動觸發」。GitHub 的排程仍保留當備援，重複觸發不會重複通知（見 [`docs/adr/0002-trigger-from-an-external-timer.md`](docs/adr/0002-trigger-from-an-external-timer.md)）。
+GitHub 自己的排程（`schedule`，設在每小時的第 7、22、37、52 分）在這個 repo 上線後 4 小時以上一次都沒有觸發，所以改由一個外部的免費定時服務（Cloudflare Workers 的 Cron Trigger）每 15 分鐘呼叫一次工作流程的「手動觸發」。GitHub 的排程仍保留當備援，重複觸發不會重複通知（見 [`docs/adr/0002-trigger-from-an-external-timer.md`](docs/adr/0002-trigger-from-an-external-timer.md)）。
+
+Cloudflare 那邊的設定（不在 repo 裡，所以這裡記一份，重建時照做）：Worker 名稱 `telegram-notify-trigger`，程式碼備份在 [`cloudflare/trigger-worker.js`](cloudflare/trigger-worker.js)（沒有任何密鑰），權杖存在 Worker 的 Secret `GITHUB_TOKEN`（類型一定要選 Secret，不是 Variable），Settings → Trigger events 加一條 Cron `*/15 * * * *`（UTC）。
 
 定時器送出的請求：
 
@@ -62,15 +64,17 @@ GitHub 自己的排程（`schedule`）在這個 repo 實測沒有觸發過，所
 
    `name` 要唯一，而且**改名會被當成全新的 Watch**（重新建立 Baseline、再發一次啟動通知）。上面的網址只是範例，其他分類頁的版面是否跟抹茶頁一樣沒有驗證過，新增後請先手動執行一次，確認「監控已啟動」的商品件數正確。
 
-2. **另一個網站**：還要為它寫一個解析程式。在 `telegram_notify/parsers/` 新增一個檔案，提供兩個函式，並在 `telegram_notify/parsers/__init__.py` 的 `PARSERS` 登記：
-   - `parse_list(html)`：回傳這一頁所有 Product（ID、品名、價格、詳細頁網址、配送說明）的清單。
-   - `parse_stock(html)`：從商品詳細頁回傳庫存原文與狀態（有庫存、缺貨、不明）；讀不到就回傳 `None`。
+2. **另一個網站**：還要為它寫一個解析程式。在 `telegram_notify/parsers/` 新增一個檔案，提供兩個函式，並在 `telegram_notify/parsers/__init__.py` 的 `PARSERS` 登記。型別都定義在 `telegram_notify/models.py`：
+   - `parse_list(html)`：回傳這一頁所有 `Product(id, name, price, url, shipping)` 的清單。頁面讀不出來時請**丟出例外**（或回傳空清單），程式會把它算成一次 Failure，不能回傳一份不完整的清單。
+   - `parse_stock(html)`：從商品詳細頁回傳 `Stock(text, status)`，`text` 是庫存原文，`status` 必須是字串 `"in_stock"`、`"out_of_stock"` 或 `"unknown"`（沒看過的文字就用 `"unknown"`）；找不到庫存那一行就回傳 `None`。
 
-3. **取得測試資料**：開發環境連不到商店，所以真實網頁要靠 GitHub Actions 抓。工作流程 **Capture Marukyu fixtures**（`.github/workflows/capture-fixtures.yml`，從 Actions 頁面手動觸發）會把網頁原始碼存進 `tests/fixtures/marukyu/`；它目前只會抓丸久小山園，新網站要複製 `scripts/capture_marukyu_fixtures.sh` 與那個工作流程，改成新的網址。
+3. **取得測試資料**：開發環境連不到商店，所以真實網頁要靠 GitHub Actions 抓。工作流程 **Capture Marukyu fixtures**（`.github/workflows/capture-fixtures.yml`，從 Actions 頁面手動觸發）會把網頁原始碼存進 `tests/fixtures/marukyu/`；它目前只會抓丸久小山園（網址、存放資料夾 `tests/fixtures/marukyu`、商品數上限 30 都寫死在 `scripts/capture_marukyu_fixtures.sh`），新網站要複製那個腳本與工作流程，改成新的網址與資料夾。
 
 4. **寫測試**：測試只從「執行一次檢查」進去，網頁、Telegram、紀錄三處換成假的，用上一步抓回的真實網頁（可參考 `tests/test_run_check.py`）。
 
-5. **觸發時間**：目前所有 Watch 共用同一個定時器（每 15 分鐘）。讓每個 Watch 各自設定觸發時間，另外規劃在 issue #12。
+5. **移除或改名**：從 `watches.toml` 拿掉或改名一個 Watch 時，`state` 分支裡舊的紀錄不會自動清掉，不影響運作；想清乾淨要手動編輯 `state.json`。
+
+6. **觸發時間**：目前所有 Watch 共用同一個定時器（每 15 分鐘）。讓每個 Watch 各自設定觸發時間，另外規劃在 issue #12。
 
 ## 開發
 
@@ -91,12 +95,13 @@ export TELEGRAM_CHAT_ID='（要接收通知的 Chat ID）'
 python3 -m telegram_notify
 ```
 
-注意：這會**真的**向商店發請求、真的傳 Telegram 訊息，並把紀錄推到目前這個 repo 的 `origin` 的 `state` 分支（所以需要有寫入 `origin` 的權限）。只想試跑的話，請在一個暫時的 clone 裡執行，或改用另一個 Chat ID。缺少任何一個環境變數時會直接停止並說明缺哪個。
+**注意：這會寫入真正的 `state` 分支。** 程式一律讀寫 `origin` 的 `state` 分支，在暫時的 clone 裡跑、或改用別的 Chat ID，都**一樣會**寫到正式的紀錄，之後正式執行會以為那些事件已經通知過而漏發。所以不要拿正式的 repo 在本機試跑；想看效果請在 GitHub 的 Actions 頁面手動執行工作流程，或先把 `origin` 指向一個自己建立的空 repo 再跑。缺少任何一個環境變數時會直接停止並說明缺哪個。
 
 ## 檔案
 
 - `watches.toml`：要監控的 Watch。
 - `telegram_notify/`：程式。`check.py` 是「執行一次檢查」，`parsers/` 是各網站的解析程式，`fetcher.py`、`telegram.py`、`statestore.py` 分別負責網頁取得、Telegram 發送、紀錄存取。
 - `tests/`：測試與真實網頁樣本（`tests/fixtures/`）。
+- `cloudflare/`：外部定時器（Cloudflare Worker）的程式碼備份。
 - `.github/workflows/`：`check.yml`（定時檢查）、`capture-fixtures.yml`（抓測試用的網頁）。
 - `docs/adr/`：重要決定的紀錄。
