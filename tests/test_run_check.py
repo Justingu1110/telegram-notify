@@ -1,3 +1,5 @@
+import json
+import re
 from pathlib import Path
 
 import pytest
@@ -38,13 +40,17 @@ class RecordingNotifier:
 
 class MemoryStore:
     def __init__(self):
-        self.state = {}
+        self._saved = "{}"
+
+    @property
+    def state(self):
+        return json.loads(self._saved)
 
     def load(self):
-        return self.state
+        return json.loads(self._saved)
 
     def save(self, state):
-        self.state = state
+        self._saved = json.dumps(state, ensure_ascii=False)
 
 
 def real_list_page():
@@ -181,3 +187,129 @@ def test_first_run_records_html_entities_in_name_price_and_note_as_plain_charact
     assert record["name"] == "永寿 & 罐 <40g>"
     assert record["price"] == "¥9,140.00"
     assert "请注意&仅配送中国地区" in record["shipping"]
+
+
+ITEM_MARKER = '<div class="item">'
+
+
+def page_without_first_products(page, count=1):
+    head, *blocks = page.split(ITEM_MARKER)
+    return ITEM_MARKER.join([head, *blocks[count:]])
+
+
+def run_after_baseline(baseline_page, later_page, notifier=None):
+    watch = load_watches()[0]
+    store = MemoryStore()
+    notifier = notifier or RecordingNotifier()
+    run_check([watch], fetch=FakeSite({watch.url: baseline_page}), notify=RecordingNotifier(), store=store)
+    run_check([watch], fetch=FakeSite({watch.url: later_page}), notify=notifier, store=store)
+    return notifier
+
+
+def test_new_product_after_baseline_is_announced_once_with_its_details():
+    full_page = real_list_page()
+
+    notifier = run_after_baseline(page_without_first_products(full_page), full_page)
+
+    assert len(notifier.sent) == 1
+    message = notifier.sent[0]
+    assert "新品上架通知" in message
+    assert "永寿 四十克 罐 （Matcha Eiju 40g can）" in message
+    assert "¥9,140.00" in message
+    assert f"{MARUKYU_LIST_URL}/pid/8835" in message
+    assert "⚠️" in message
+    assert "仅配送中国地区，不包含台湾香港澳门" in message
+
+
+def test_a_product_announced_once_is_not_announced_again():
+    full_page = real_list_page()
+    watch = load_watches()[0]
+    store = MemoryStore()
+    run_check([watch], fetch=FakeSite({watch.url: page_without_first_products(full_page)}), notify=RecordingNotifier(), store=store)
+    run_check([watch], fetch=FakeSite({watch.url: full_page}), notify=RecordingNotifier(), store=store)
+    notifier = RecordingNotifier()
+
+    run_check([watch], fetch=FakeSite({watch.url: full_page}), notify=notifier, store=store)
+
+    assert notifier.sent == []
+
+
+def test_each_of_several_new_products_gets_its_own_announcement_in_page_order():
+    full_page = real_list_page()
+
+    notifier = run_after_baseline(page_without_first_products(full_page, 2), full_page)
+
+    assert len(notifier.sent) == 2
+    assert f"{MARUKYU_LIST_URL}/pid/8835" in notifier.sent[0]
+    assert f"{MARUKYU_LIST_URL}/pid/8794" in notifier.sent[1]
+
+
+def test_special_characters_in_a_product_name_are_escaped_for_telegram_html():
+    full_page = real_list_page().replace("永寿 四十克 罐 （Matcha Eiju 40g can）", "A &amp; B &lt;x&gt;")
+
+    notifier = run_after_baseline(page_without_first_products(full_page), full_page)
+
+    assert "A &amp; B &lt;x&gt;" in notifier.sent[0]
+    assert "<x>" not in notifier.sent[0]
+
+
+def test_a_new_product_without_a_shipping_note_has_no_warning_line():
+    full_page = re.sub(r'<div class="text">.*?</div>', "", real_list_page(), count=1, flags=re.S)
+
+    notifier = run_after_baseline(page_without_first_products(full_page), full_page)
+
+    assert len(notifier.sent) == 1
+    assert "⚠️" not in notifier.sent[0]
+
+
+class FailsOnSecondSend:
+    def __init__(self):
+        self.sent = []
+
+    def __call__(self, text):
+        if len(self.sent) == 1:
+            raise RuntimeError("telegram is down")
+        self.sent.append(text)
+
+
+def test_a_failed_send_does_not_cause_already_announced_products_to_be_announced_again():
+    full_page = real_list_page()
+    watch = load_watches()[0]
+    store = MemoryStore()
+    run_check([watch], fetch=FakeSite({watch.url: page_without_first_products(full_page, 2)}), notify=RecordingNotifier(), store=store)
+    with pytest.raises(RuntimeError):
+        run_check([watch], fetch=FakeSite({watch.url: full_page}), notify=FailsOnSecondSend(), store=store)
+    notifier = RecordingNotifier()
+
+    run_check([watch], fetch=FakeSite({watch.url: full_page}), notify=notifier, store=store)
+
+    assert len(notifier.sent) == 1
+    assert f"{MARUKYU_LIST_URL}/pid/8794" in notifier.sent[0]
+
+
+class AlwaysFails:
+    def __call__(self, text):
+        raise RuntimeError("telegram is down")
+
+
+def test_a_failed_startup_summary_is_sent_again_on_the_next_run():
+    watch = load_watches()[0]
+    site = FakeSite({watch.url: real_list_page()})
+    store = MemoryStore()
+    with pytest.raises(RuntimeError):
+        run_check([watch], fetch=site, notify=AlwaysFails(), store=store)
+    notifier = RecordingNotifier()
+
+    run_check([watch], fetch=site, notify=notifier, store=store)
+
+    assert len(notifier.sent) == 1
+    assert "監控已啟動" in notifier.sent[0]
+
+
+def test_special_characters_in_a_watch_name_are_escaped_in_the_startup_summary():
+    watch = Watch(name="A&B <c>", url=load_watches()[0].url, parser="marukyu")
+    notifier = RecordingNotifier()
+
+    run_check([watch], fetch=FakeSite({watch.url: real_list_page()}), notify=notifier, store=MemoryStore())
+
+    assert "A&amp;B &lt;c&gt;" in notifier.sent[0]
