@@ -527,3 +527,35 @@ def test_a_warning_that_could_not_be_sent_is_sent_on_the_next_failed_check():
 
     assert len(notifier.sent) == 1
     assert watch.name in notifier.sent[0]
+
+
+def test_the_saved_record_stops_changing_once_the_warning_has_been_sent():
+    watch, site, store = baselined_watch()
+    site.down.add(watch.url)
+    for _ in range(3):
+        check(watch, site, store, RecordingNotifier())
+    record_after_warning = store.state
+
+    for _ in range(3):
+        check(watch, site, store, RecordingNotifier())
+
+    assert store.state == record_after_warning
+
+
+class FailsWith:
+    def __init__(self, reason):
+        self.reason = reason
+
+    def __call__(self, url):
+        raise RuntimeError(self.reason)
+
+
+def test_a_very_long_failure_reason_is_shortened_in_the_warning():
+    watch, _site, store = baselined_watch()
+    notifier = RecordingNotifier()
+
+    for _ in range(3):
+        check(watch, FailsWith("boom " * 2000), store, notifier)
+
+    assert "boom" in notifier.sent[0]
+    assert len(notifier.sent[0]) < 500

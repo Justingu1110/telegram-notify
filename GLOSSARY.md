@@ -28,5 +28,13 @@ An Event: a Product that was out of stock becomes in stock.
 _Avoid_: Back in stock
 
 **Notification** (通知):
-The Telegram message that tells the owner about one Event.
+A Telegram message to the owner: either about one Event, or a Warning about a Watch.
 _Avoid_: Message, alert
+
+**Failure** (失敗):
+A check of a Watch that yields no readable Products: the page could not be fetched, could not be read, or listed no Products. A Failure never changes the recorded Products.
+_Avoid_: Error, outage
+
+**Warning** (警告):
+The Notification sent when a Watch has had three Failures in a row, naming the Watch and the reason.
+_Avoid_: Alert, error message

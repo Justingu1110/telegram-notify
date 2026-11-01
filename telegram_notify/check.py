@@ -4,6 +4,7 @@ from html import escape
 from .parsers import get_parser
 
 FAILURES_BEFORE_WARNING = 3
+MAX_REASON_LENGTH = 200
 
 
 def run_check(watches, fetch, notify, store):
@@ -34,7 +35,7 @@ def _read_products(parse_list, fetch, url):
     try:
         products = parse_list(fetch(url))
     except Exception as error:
-        return [], f"{type(error).__name__}: {error}"
+        return [], _shortened(f"{type(error).__name__}: {error}")
     if not products:
         return [], "解析不到任何商品（網站可能改版）"
     return products, None
@@ -44,7 +45,11 @@ def _count_failure(watch, entry, notify, problem):
     failures = entry.get("failures", 0) + 1
     if failures == FAILURES_BEFORE_WARNING:
         notify(f"⚠️ 監控異常：{escape(watch.name)}\n已連續 {failures} 次檢查失敗\n原因：{escape(problem)}")
-    entry["failures"] = failures
+    entry["failures"] = min(failures, FAILURES_BEFORE_WARNING)
+
+
+def _shortened(text):
+    return text if len(text) <= MAX_REASON_LENGTH else text[:MAX_REASON_LENGTH] + "…"
 
 
 def _record(product):
