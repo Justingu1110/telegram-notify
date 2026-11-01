@@ -22,8 +22,8 @@
         "name": "永寿 四十克 罐 （Matcha Eiju 40g can）",
         "price": "¥9,140.00",
         "shipping": "请注意，仅配送中国地区，不包含台湾香港澳门。",
-        "stock_status": "in_stock",
-        "stock_text": "6有库存",
+        "stock_status": "out_of_stock",
+        "stock_text": "无库存",
         "url": "https://www.marukyu-koyamaen.net/category/select/cid/312/pid/8835"
       }
     }
