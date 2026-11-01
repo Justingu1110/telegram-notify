@@ -1,4 +1,5 @@
 name: Check the watches
+run-name: Check the watches (${{ github.event_name }})
 
 on:
   schedule:
