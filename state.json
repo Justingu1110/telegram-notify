@@ -6,7 +6,7 @@
         "name": "和光 四十克 罐　(Matcha Wako 40g can)",
         "price": "¥4,540.00",
         "shipping": "人気商品 【和光】 请留意，仅配送至中国地区， 不包含台...",
-        "stock_status": "in_stock",
+        "stock_status": "out_of_stock",
         "stock_text": "6有库存",
         "url": "https://www.marukyu-koyamaen.net/category/select/cid/312/pid/8764"
       },
@@ -15,7 +15,7 @@
         "price": "¥7,140.00",
         "shipping": "請留意，本網站的商品 配送至中國地區(不包含 台灣,香港 澳門地區) 抹茶 【雲鶴】...",
         "stock_status": "in_stock",
-        "stock_text": "8有库存",
+        "stock_text": "4有库存",
         "url": "https://www.marukyu-koyamaen.net/category/select/cid/312/pid/8778"
       },
       "8794": {
@@ -23,14 +23,14 @@
         "price": "¥7,140.00",
         "shipping": "※中文网站的商品，仅寄送中国地区，不包含台湾香港澳门。 商品说明...",
         "stock_status": "in_stock",
-        "stock_text": "8有库存",
+        "stock_text": "6有库存",
         "url": "https://www.marukyu-koyamaen.net/category/select/cid/312/pid/8794"
       },
       "8833": {
         "name": "金輪 四十克 罐 (Matcha Kinrin 40g ca...",
         "price": "¥5,740.00",
         "shipping": "抹茶【金輪】 仅配送至中国地区，不包含台湾香港澳门",
-        "stock_status": "in_stock",
+        "stock_status": "out_of_stock",
         "stock_text": "6有库存",
         "url": "https://www.marukyu-koyamaen.net/category/select/cid/312/pid/8833"
       },
@@ -39,7 +39,7 @@
         "price": "¥9,140.00",
         "shipping": "请注意，仅配送中国地区，不包含台湾香港澳门。",
         "stock_status": "in_stock",
-        "stock_text": "8有库存",
+        "stock_text": "4有库存",
         "url": "https://www.marukyu-koyamaen.net/category/select/cid/312/pid/8835"
       }
     }
